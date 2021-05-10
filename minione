@@ -17,6 +17,7 @@
 #--------------------------------------------------------------------------- #
 
 # default parameters values
+EE='no'
 VERSION='5.12'
 FORCE='no'
 VERBOSE='no'
@@ -68,6 +69,7 @@ usage() {
     e "--firecracker"                             "Setup host to run Firecracker micro-VMs"
     e "--frontend"                                "Install only frontend, skip node setup,"
     e ""                                          "no networking configuration"
+    e "--enterprise"                              "Evaluate enterprise edition. Requires auth token"
     e "--node"                                    "Install only node, edge(Packet) only"
     e ""
     e "--password [random generated]"             "Initial password for oneadmin"
@@ -117,7 +119,7 @@ PARAMETERS=$(cat <<EOF
     bridge-interface:,nat-interface:,vnet-address:,vnet-netmask:,
     vnet-gateway:,vnet-ar-ip-start:,vnet-ar-ip-count:,marketapp-name:,
     vm-password:,lxd,firecracker,sunstone-port:,purge,preserve-user,edge:,
-    edge-host-num:,edge-marketapp-name:,
+    edge-host-num:,edge-marketapp-name:,enterprise:,
     aws-access-key:,aws-secret-key:,aws-region:,aws-instance-type:,aws-ami:,
     packet-token:,packet-project:,packet-facility:,packet-plan:,
     packet-os:,fc-marketapp-name:,fc-kernel-name:,repo-base:
@@ -179,6 +181,7 @@ while true ; do
         --help) usage; exit 0;;
         --yes) ASK="no"; shift;;
         --frontend) FRONTEND='yes'; NODE="no"; NETWORKING="no"; shift;;
+        --enterprise) EE='yes'; EE_TOKEN="$2"; shift 2;;
         --node) FRONTEND="no"; NODE="yes"; shift;;
         --version) VERSION="$2"; VERSION_GIVEN="yes" ; shift 2;;
         --ssh-pubkey) SSH_PUBKEY="$2" ; shift 2;;
@@ -269,6 +272,10 @@ fi
 if [[ $LXD == yes ]]; then
     PLAYBOOK="default_lxd"
     HYPERVISOR="lxd"
+fi
+
+if [[ $EE == yes ]]; then
+    REPO_URL="https://${EE_TOKEN}@enterprise.opennebula.io/repo"
 fi
 
 if [[ -z "$REPO_BASE" ]]; then
@@ -798,7 +805,7 @@ install_fireedge_deps() {
 }
 
 install_opennebula_kvm_pkgs() {
-    install opennebula-node-kvm || return 1
+    install $NODE_KVM_PKG || return 1
 
     if redhat; then
         subscription-manager repos --enable \
@@ -824,7 +831,7 @@ install_opennebula_frc_pkgs() {
 
 uninstall_opennebula_pkgs() {
     if centos; then
-        yum --quiet -y remove opennebula-node-kvm $ONE_FE_PKGS
+        yum --quiet -y remove $NODE_KVM_PKG $ONE_FE_PKGS
         systemctl restart ${LIBVIRTD} || true
 
         if redhat; then
@@ -834,7 +841,7 @@ uninstall_opennebula_pkgs() {
         fi
     elif debian; then
         apt-get purge -q -y $ONE_FE_PKGS >/dev/null
-        apt-get purge -q -y opennebula-node-kvm >/dev/null
+        apt-get purge -q -y $NODE_KVM_PKG >/dev/null
         systemctl restart ${LIBVIRTD} || true
     fi
 }
@@ -902,15 +909,19 @@ if verlte 5.13 $VERSION; then
                  opennebula-flow opennebula-fireedge opennebula-gate
                  opennebula-libs opennebula-rubygems opennebula-sunstone
                  opennebula-tools opennebula-guacd'
+    NODE_KVM_PKG='opennebula-node-kvm'
 # up to 5.12
 else
     ONE_SERVICES='opennebula opennebula-sunstone opennebula-flow opennebula-gate'
 
+
     if centos; then
         ONE_FE_PKGS='opennebula-server opennebula-sunstone opennebula-ruby
                      opennebula-gate opennebula-flow'
+        NODE_KVM_PKG='opennebula-node-kvm'
     else
         ONE_FE_PKGS='opennebula opennebula-sunstone opennebula-gate opennebula-flow'
+        NODE_KVM_PKG='opennebula-node'
     fi
 fi
 
